@@ -21,7 +21,7 @@
 #include "map/unit.h"
 #include "common/cbasetypes.h"
 #include "common/conf.h"
-#include "common/malloc.h"
+#include "common/memmgr.h"
 #include "common/nullpo.h"
 #include "common/random.h"
 #include "common/showmsg.h"
@@ -507,7 +507,7 @@ int quest_read_db(void)
 	const char *filename = "quest_db.conf";
 
 	sprintf(filepath, "%s/%s", map->db_path, filename);
-	if (libconfig->read_file(&quest_db_conf, filepath) || !(qdb = libconfig->setting_get_member(quest_db_conf.root, filename))) {
+	if (libconfig->read_file(&quest_db_conf, filepath) || !(qdb = libconfig->setting_get_member(quest_db_conf.root, "quest_db"))) {
 		ShowError("can't read %s\n", filepath);
 		return -1;
 	}
@@ -529,6 +529,7 @@ int quest_read_db(void)
 
 		count++;
 	}
+	libconfig->destroy(&quest_db_conf);
 	ShowStatus("Done reading '"CL_WHITE"%d"CL_RESET"' entries in '"CL_WHITE"%s"CL_RESET"'.\n", count, filename);
 	return count;
 }

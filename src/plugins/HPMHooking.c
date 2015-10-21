@@ -4,7 +4,7 @@
 
 #include "common/hercules.h"
 #include "common/db.h"
-#include "common/malloc.h"
+#include "common/memmgr.h"
 #include "common/mmo.h"
 #include "common/socket.h"
 
@@ -89,7 +89,7 @@
 #include "common/conf.h"
 #include "common/console.h"
 #include "common/db.h"
-#include "common/malloc.h"
+#include "common/memmgr.h"
 #include "common/nullpo.h"
 #include "common/showmsg.h"
 #include "common/socket.h"
@@ -152,11 +152,10 @@ HPExport const char *Hooked (bool *fr) {
 	return NULL;
 }
 
-
 HPExport bool HPM_Plugin_AddHook(enum HPluginHookType type, const char *target, void *hook, unsigned int pID) {
 	struct HookingPointData *hpd;
 
-	if( hp_db && (hpd = strdb_get(hp_db,target)) ) {
+	if (hp_db && (hpd = strdb_get(hp_db,target)) != NULL) {
 		struct HPMHookPoint **hp = NULL;
 		int *count = NULL;
 
@@ -230,4 +229,3 @@ void HPM_HP_load(void) {
 
 	#include HPM_SOURCES_INCLUDE
 }
-

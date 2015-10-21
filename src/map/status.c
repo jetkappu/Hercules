@@ -28,13 +28,14 @@
 #include "map/vending.h"
 #include "common/cbasetypes.h"
 #include "common/ers.h"
-#include "common/malloc.h"
+#include "common/memmgr.h"
 #include "common/nullpo.h"
 #include "common/random.h"
 #include "common/showmsg.h"
 #include "common/strlib.h"
 #include "common/timer.h"
 #include "common/utils.h"
+#include "common/conf.h"
 
 #include <math.h>
 #include <memory.h>
@@ -1079,7 +1080,6 @@ void initDummyData(void)
 	status->dummy.mode = MD_CANMOVE;
 }
 
-
 //For copying a status_data structure from b to a, without overwriting current Hp and Sp
 static inline void status_cpy(struct status_data* a, const struct status_data* b)
 {
@@ -1192,7 +1192,7 @@ int status_damage(struct block_list *src,struct block_list *target,int64 in_hp, 
 			struct status_change_entry *sce;
 
 #ifdef DEVOTION_REFLECT_DAMAGE
-			if(src && (sce = sc->data[SC_DEVOTION])) {
+			if (src && (sce = sc->data[SC_DEVOTION]) != NULL) {
 				struct block_list *d_bl = map->id2bl(sce->val1);
 
 				if(d_bl &&((d_bl->type == BL_MER && ((TBL_MER *)d_bl)->master && ((TBL_MER *)d_bl)->master->bl.id == target->id)
@@ -1588,7 +1588,7 @@ int status_check_skilluse(struct block_list *src, struct block_list *target, uin
 		//on dead characters, said checks are left to skill.c [Skotlex]
 		if (target && status->isdead(target))
 			return 0;
-		if( src && (sc = status->get_sc(src)) && sc->data[SC_COLD] && src->type != BL_MOB)
+		if( src && (sc = status->get_sc(src)) != NULL && sc->data[SC_COLD] && src->type != BL_MOB)
 			return 0;
 	}
 
@@ -1630,7 +1630,7 @@ int status_check_skilluse(struct block_list *src, struct block_list *target, uin
 				break;
 			case AL_TELEPORT:
 				//Should fail when used on top of Land Protector [Skotlex]
-				if (src && map->getcell(src->m, src->x, src->y, CELL_CHKLANDPROTECTOR)
+				if (src && map->getcell(src->m, src, src->x, src->y, CELL_CHKLANDPROTECTOR)
 					&& !(st->mode&MD_BOSS)
 					&& (src->type != BL_PC || ((TBL_PC*)src)->skillitem != skill_id))
 					return 0;
@@ -1875,8 +1875,8 @@ int status_calc_mob_(struct mob_data* md, enum e_status_calc_opt opt) {
 	if (md->special_state.size)
 		flag|=2;
 
-	if( md->guardian_data && md->guardian_data->g
-		&& (guardup_lv = guild->checkskill(md->guardian_data->g,GD_GUARDUP)) )
+	if (md->guardian_data && md->guardian_data->g
+	 && (guardup_lv = guild->checkskill(md->guardian_data->g,GD_GUARDUP)) > 0)
 		flag|=4;
 
 	if (battle_config.slaves_inherit_speed && md->master_id)
@@ -1951,7 +1951,6 @@ int status_calc_mob_(struct mob_data* md, enum e_status_calc_opt opt) {
 		mstatus->sp = mstatus->max_sp;
 		mstatus->speed -= cap_value(diff, 0, mstatus->speed - 10);
 	}
-
 
 	if (flag&2 && battle_config.mob_size_influence) {
 		// change for sized monsters [Valaris]
@@ -2455,7 +2454,7 @@ int status_calc_pc_(struct map_session_data* sd, enum e_status_calc_opt opt) {
 		if( data && data->script )
 			script->run_use_script(sd, data, 0);
 	}
-	
+
 	status->calc_pc_additional(sd, opt);
 
 	if( sd->pd ) { // Pet Bonus
@@ -2602,7 +2601,6 @@ int status_calc_pc_(struct map_session_data* sd, enum e_status_calc_opt opt) {
 	if( (skill_lv = pc->checkskill(sd,WM_LESSON)) > 0 )
 		bstatus->max_sp += 30 * skill_lv;
 
-
 	// Apply relative modifiers from equipment
 	if(sd->sprate < 0)
 		sd->sprate = 0;
@@ -2704,7 +2702,7 @@ int status_calc_pc_(struct map_session_data* sd, enum e_status_calc_opt opt) {
 	}
 	if( (sd->status.weapon == W_1HAXE || sd->status.weapon == W_2HAXE) && (skill_lv = pc->checkskill(sd,NC_TRAININGAXE)) > 0 )
 		bstatus->hit += 3*skill_lv;
-	if((sd->status.weapon == W_MACE || sd->status.weapon == W_2HMACE) && ((skill_lv = pc->checkskill(sd,NC_TRAININGAXE)) > 0))
+	if((sd->status.weapon == W_MACE || sd->status.weapon == W_2HMACE) && (skill_lv = pc->checkskill(sd,NC_TRAININGAXE)) > 0)
 		bstatus->hit += 2*skill_lv;
 
 	// ----- FLEE CALCULATION -----
@@ -2780,7 +2778,6 @@ int status_calc_pc_(struct map_session_data* sd, enum e_status_calc_opt opt) {
 		bstatus->aspd_rate -= 250 - 50 * pc->checkskill(sd, RK_DRAGONTRAINING);
 #endif
 	bstatus->adelay = 2*bstatus->amotion;
-
 
 	// ----- DMOTION -----
 	//
@@ -3539,12 +3536,6 @@ void status_calc_bl_main(struct block_list *bl, /*enum scb_flag*/int flag) {
 			st->cri = status->calc_critical(bl, sc, bst->cri, true);
 		else
 			st->cri = status->calc_critical(bl, sc, bst->cri + 3*(st->luk - bst->luk), true);
-		/**
-		* after status_calc_critical so the bonus is applied despite if you have or not a sc bugreport:5240
-		**/
-		if( bl->type == BL_PC && ((TBL_PC*)bl)->status.weapon == W_KATAR )
-			st->cri <<= 1;
-
 	}
 
 	if(flag&SCB_FLEE2 && bst->flee2) {
@@ -5086,7 +5077,6 @@ signed short status_calc_def2(struct block_list *bl, struct status_change *sc, i
 #endif
 }
 
-
 defType status_calc_mdef(struct block_list *bl, struct status_change *sc, int mdef, bool viewable) {
 
 	if(!sc || !sc->count)
@@ -5799,7 +5789,6 @@ unsigned char status_calc_element_lv(struct block_list *bl, struct status_change
 
 	return (unsigned char)cap_value(lv,1,4);
 }
-
 
 unsigned char status_calc_attack_element(struct block_list *bl, struct status_change *sc, int element)
 {
@@ -7552,11 +7541,12 @@ int status_change_start(struct block_list *src, struct block_list *bl, enum sc_t
 					if( sd ) {
 						int i;
 						for( i = 0; i < MAX_PC_DEVOTION; i++ ) {
-							if( sd->devotion[i] && (tsd = map->id2sd(sd->devotion[i])) )
+							if (sd->devotion[i] && (tsd = map->id2sd(sd->devotion[i])) != NULL)
 								status->change_start(bl, &tsd->bl, type, 10000, val1, val2, val3, val4, tick, SCFLAG_ALL);
 						}
-					} else if( bl->type == BL_MER && ((TBL_MER*)bl)->devotion_flag && (tsd = ((TBL_MER*)bl)->master) )
+					} else if (bl->type == BL_MER && ((TBL_MER*)bl)->devotion_flag && (tsd = ((TBL_MER*)bl)->master) != NULL) {
 						status->change_start(bl, &tsd->bl, type, 10000, val1, val2, val3, val4, tick, SCFLAG_ALL);
+					}
 				}
 				//val4 signals infinite endure (if val4 == 2 it is infinite endure from Berserk)
 				if( val4 )
@@ -7651,11 +7641,12 @@ int status_change_start(struct block_list *src, struct block_list *bl, enum sc_t
 					if( sd ) {
 						int i;
 						for( i = 0; i < MAX_PC_DEVOTION; i++ ) {
-							if( sd->devotion[i] && (tsd = map->id2sd(sd->devotion[i])) )
+							if (sd->devotion[i] && (tsd = map->id2sd(sd->devotion[i])) != NULL)
 								status->change_start(bl, &tsd->bl, type, 10000, val1, val2, 0, 0, tick, SCFLAG_ALL);
 						}
-					} else if( bl->type == BL_MER && ((TBL_MER*)bl)->devotion_flag && (tsd = ((TBL_MER*)bl)->master) )
+					} else if (bl->type == BL_MER && ((TBL_MER*)bl)->devotion_flag && (tsd = ((TBL_MER*)bl)->master) != NULL) {
 						status->change_start(bl, &tsd->bl, type, 10000, val1, val2, 0, 0, tick, SCFLAG_ALL);
+					}
 				}
 				break;
 			case SC_NOEQUIPWEAPON:
@@ -7909,12 +7900,13 @@ int status_change_start(struct block_list *src, struct block_list *bl, enum sc_t
 					if( bl->type&(BL_PC|BL_MER) ) {
 						if( sd ) {
 							for( i = 0; i < MAX_PC_DEVOTION; i++ ) {
-								if( sd->devotion[i] && (tsd = map->id2sd(sd->devotion[i])) )
+								if (sd->devotion[i] && (tsd = map->id2sd(sd->devotion[i])) != NULL)
 									status->change_start(bl, &tsd->bl, type, 10000, val1, val2, 0, 0, tick, SCFLAG_ALL);
 							}
 						}
-						else if( bl->type == BL_MER && ((TBL_MER*)bl)->devotion_flag && (tsd = ((TBL_MER*)bl)->master) )
+						else if (bl->type == BL_MER && ((TBL_MER*)bl)->devotion_flag && (tsd = ((TBL_MER*)bl)->master) != NULL) {
 							status->change_start(bl, &tsd->bl, type, 10000, val1, val2, 0, 0, tick, SCFLAG_ALL);
+						}
 					}
 				}
 				break;
@@ -7930,7 +7922,7 @@ int status_change_start(struct block_list *src, struct block_list *bl, enum sc_t
 						int i;
 						for (i = 0; i < MAX_PC_DEVOTION; i++) {
 							//See if there are devoted characters, and pass the status to them. [Skotlex]
-							if (sd->devotion[i] && (tsd = map->id2sd(sd->devotion[i])))
+							if (sd->devotion[i] && (tsd = map->id2sd(sd->devotion[i])) != NULL)
 								status->change_start(bl, &tsd->bl,type,10000,val1,5+val1*5,val3,val4,tick,SCFLAG_NOAVOID);
 						}
 					}
@@ -8067,7 +8059,7 @@ int status_change_start(struct block_list *src, struct block_list *bl, enum sc_t
 				struct block_list *d_bl;
 				struct status_change *d_sc;
 
-				if ((d_bl = map->id2bl(val1)) && (d_sc = status->get_sc(d_bl)) && d_sc->count) {
+				if ((d_bl = map->id2bl(val1)) && (d_sc = status->get_sc(d_bl)) != NULL && d_sc->count) {
 					// Inherits Status From Source
 					const enum sc_type types[] = { SC_AUTOGUARD, SC_DEFENDER, SC_REFLECTSHIELD, SC_ENDURE };
 					int i = (map_flag_gvg(bl->m) || map->list[bl->m].flag.battleground)?2:3;
@@ -8969,6 +8961,9 @@ int status_change_start(struct block_list *src, struct block_list *bl, enum sc_t
 			{
 				int hp = status_get_hp(bl), sp = status_get_sp(bl), lv = 5;
 
+				if (sp < 1) sp = 1;
+				if (hp < 1) hp = 1;
+
 				if( rnd()%100 > (25 + 10 * val1) - status_get_int(bl) / 2)
 					return 0;
 
@@ -9530,12 +9525,12 @@ int status_change_start(struct block_list *src, struct block_list *bl, enum sc_t
 		++(sc->count);
 		sce = sc->data[type] = ers_alloc(status->data_ers, struct status_change_entry);
 	}
-	
+
 	sce->val1 = val1;
 	sce->val2 = val2;
 	sce->val3 = val3;
 	sce->val4 = val4;
-	
+
 	if (tick >= 0) {
 		sce->timer = timer->add(timer->gettick() + tick, status->change_timer, bl->id, type);
 		sce->infinite_duration = false;
@@ -9726,7 +9721,7 @@ int status_change_end_(struct block_list* bl, enum sc_type type, int tid, const 
 		return 0;
 
 	st = status->get_status_data(bl);
-	
+
 	if( sd && sce->infinite_duration && !sd->state.loggingout )
 		chrif->del_scdata_single(sd->status.account_id,sd->status.char_id,type);
 
@@ -9822,7 +9817,7 @@ int status_change_end_(struct block_list* bl, enum sc_type type, int tid, const 
 					// Clear Status from others
 					int i;
 					for( i = 0; i < MAX_PC_DEVOTION; i++ ) {
-						if( sd->devotion[i] && (tsd = map->id2sd(sd->devotion[i])) && tsd->sc.data[type] )
+						if (sd->devotion[i] && (tsd = map->id2sd(sd->devotion[i])) != NULL && tsd->sc.data[type])
 							status_change_end(&tsd->bl, type, INVALID_TIMER);
 					}
 				} else if( bl->type == BL_MER && ((TBL_MER*)bl)->devotion_flag ) {
@@ -9883,7 +9878,7 @@ int status_change_end_(struct block_list* bl, enum sc_type type, int tid, const 
 					sd->delunit_prevline = line;
 				}
 
-				if (sce->val4 && sce->val4 != BCT_SELF && (dsd=map->id2sd(sce->val4))) {
+				if (sce->val4 && sce->val4 != BCT_SELF && (dsd=map->id2sd(sce->val4)) != NULL) {
 					// end status on partner as well
 					dsc = dsd->sc.data[SC_DANCING];
 					if (dsc) {
@@ -9908,7 +9903,7 @@ int status_change_end_(struct block_list* bl, enum sc_type type, int tid, const 
 					}
 
 					sce->val2 = 0;
-					
+
 					if( group )
 						skill->del_unitgroup(group,ALC_MARK);
 				}
@@ -10072,7 +10067,7 @@ int status_change_end_(struct block_list* bl, enum sc_type type, int tid, const 
 				struct block_list *tbl = map->id2bl(sce->val2);
 				struct status_change *tsc = NULL;
 				sce->val2 = 0;
-				if( tbl && (tsc = status->get_sc(tbl)) && tsc->data[SC_STOP] && tsc->data[SC_STOP]->val2 == bl->id )
+				if (tbl && (tsc = status->get_sc(tbl)) != NULL && tsc->data[SC_STOP] && tsc->data[SC_STOP]->val2 == bl->id)
 					status_change_end(tbl, SC_STOP, INVALID_TIMER);
 			}
 			break;
@@ -10437,7 +10432,7 @@ int status_change_end_(struct block_list* bl, enum sc_type type, int tid, const 
 		skill->unit_move(bl,timer->gettick(),1);
 
 	if (opt_flag & 2 && sd) {
-		if (map->getcell(bl->m,bl->x,bl->y,CELL_CHKNPC))
+		if (map->getcell(bl->m, bl, bl->x, bl->y, CELL_CHKNPC))
 			npc->touch_areanpc(sd,bl->m,bl->x,bl->y); //Trigger on-touch event.
 		else
 			npc->untouch_areanpc(sd, bl->m, bl->x, bl->y);
@@ -10454,10 +10449,7 @@ int kaahi_heal_timer(int tid, int64 tick, int id, intptr_t data) {
 	struct status_data *st;
 	int hp;
 
-	if(!( (bl=map->id2bl(id))
-	   && (sc=status->get_sc(bl))
-	   && (sce=sc->data[SC_KAAHI])
-	))
+	if ((bl=map->id2bl(id)) == NULL || (sc=status->get_sc(bl)) == NULL || (sce=sc->data[SC_KAAHI]) == NULL)
 		return 0;
 
 	if(sce->val4 != tid) {
@@ -10501,7 +10493,7 @@ int status_change_timer(int tid, int64 tick, int id, intptr_t data) {
 	sc = status->get_sc(bl);
 	st = status->get_status_data(bl);
 
-	if (!(sc && (sce = sc->data[type]))) {
+	if (!sc || (sce = sc->data[type]) == NULL) {
 		ShowDebug("status_change_timer: Null pointer id: %d data: %"PRIdPTR" bl-type: %d\n", id, data, bl->type);
 		return 0;
 	}
@@ -10510,7 +10502,7 @@ int status_change_timer(int tid, int64 tick, int id, intptr_t data) {
 		ShowError("status_change_timer: Mismatch for type %d: %d != %d (bl id %d)\n",type,tid,sce->timer, bl->id);
 		return 0;
 	}
-	
+
 	sce->timer = INVALID_TIMER;
 
 	sd = BL_CAST(BL_PC, bl);
@@ -10948,15 +10940,14 @@ int status_change_timer(int tid, int64 tick, int id, intptr_t data) {
 				int heal = st->max_hp * 3 / 100;
 				if (sc->count && sc->data[SC_AKAITSUKI] && heal)
 					heal = ~heal + 1;
-				
+
 				map->freeblock_lock();
-				
 				status->heal(bl, heal, 0, 2);
 				if( sc->data[type] ) {
 					sc_timer_next(5000 + tick, status->change_timer, bl->id, data);
 				}
 				map->freeblock_unlock();
-				
+
 				return 0;
 			}
 			break;
@@ -11114,7 +11105,6 @@ int status_change_timer(int tid, int64 tick, int id, intptr_t data) {
 				return 0;
 			}
 			break;
-
 
 		case SC_SATURDAY_NIGHT_FEVER:
 			if( --(sce->val3) >= 0 ) {
@@ -11656,7 +11646,7 @@ int status_change_clear_buffs (struct block_list* bl, int type) {
 		return 0;
 
 	map->freeblock_lock();
-	
+
 	if (type&6) //Debuffs
 		for (i = SC_COMMON_MIN; i <= SC_COMMON_MAX; i++)
 			status_change_end(bl, (sc_type)i, INVALID_TIMER);
@@ -11703,9 +11693,9 @@ int status_change_clear_buffs (struct block_list* bl, int type) {
 		}
 		status_change_end(bl, (sc_type)i, INVALID_TIMER);
 	}
-	
+
 	map->freeblock_unlock();
-	
+
 	return 0;
 }
 
@@ -11838,7 +11828,7 @@ int status_natural_heal(struct block_list* bl, va_list args) {
 
 	if (flag&(RGN_SHP|RGN_SSP)
 	 && regen->ssregen
-	 && (vd = status->get_viewdata(bl))
+	 && (vd = status->get_viewdata(bl)) != NULL
 	 && vd->dead_sit == 2
 	) {
 		//Apply sitting regen bonus.
@@ -12171,7 +12161,7 @@ void status_read_job_db_sub(int idx, const char *name, config_setting_t *jdb)
 	if ((temp = libconfig->setting_get_member(jdb, "HPTable"))) {
 		int level = 0, avg_increment, base;
 		config_setting_t *hp = NULL;
-		while (level <= MAX_LEVEL && (hp = libconfig->setting_get_elem(temp, level))) {
+		while (level <= MAX_LEVEL && (hp = libconfig->setting_get_elem(temp, level)) != NULL) {
 			i32 = libconfig->setting_get_int(hp);
 			status->dbs->HP_table[idx][++level] = min(i32, battle_config.max_hp);
 		}
@@ -12191,7 +12181,7 @@ void status_read_job_db_sub(int idx, const char *name, config_setting_t *jdb)
 	if ((temp = libconfig->setting_get_member(jdb, "SPTable"))) {
 		int level = 0, avg_increment, base;
 		config_setting_t *sp = NULL;
-		while (level <= MAX_LEVEL && (sp = libconfig->setting_get_elem(temp, level))) {
+		while (level <= MAX_LEVEL && (sp = libconfig->setting_get_elem(temp, level)) != NULL) {
 			i32 = libconfig->setting_get_int(sp);
 			status->dbs->SP_table[idx][++level] = min(i32, battle_config.max_sp);
 		}
@@ -12220,11 +12210,10 @@ void status_read_job_db(void) { /* [malufett/Hercules] */
 	int i = 0;
 	config_t job_db_conf;
 	config_setting_t *jdb = NULL;
-	const char *config_filename = 
 #ifdef RENEWAL_ASPD
-		"db/re/job_db.conf";
+	const char *config_filename = "db/re/job_db.conf";
 #else
-		"db/pre-re/job_db.conf";
+	const char *config_filename = "db/pre-re/job_db.conf";
 #endif
 
 	if ( libconfig->read_file(&job_db_conf, config_filename) ) {
@@ -12278,38 +12267,136 @@ bool status_readdb_sizefix(char* fields[], int columns, int current)
 	return true;
 }
 
-bool status_readdb_refine(char* fields[], int columns, int current)
+/**
+ * Processes a refine_db.conf entry.
+ *
+ * @param *r	  Libconfig setting entry. It is expected to be valid and it
+ *                won't be freed (it is care of the caller to do so if
+ *                necessary)
+ * @param n       Ordinal number of the entry, to be displayed in case of
+ *                validation errors.
+ * @param *source Source of the entry (file name), to be displayed in case of
+ *                validation errors.
+ * @return # of the validated entry, or 0 in case of failure.
+ */
+int status_readdb_refine_libconfig_sub(config_setting_t *r, const char *name, const char *source)
 {
-	int i, bonus_per_level, random_bonus, random_bonus_start_level;
-
-	current = atoi(fields[0]);
-
-	if (current < 0 || current >= REFINE_TYPE_MAX)
-		return false;
-
-	bonus_per_level = atoi(fields[1]);
-	random_bonus_start_level = atoi(fields[2]);
-	random_bonus = atoi(fields[3]);
-
-	for(i = 0; i < MAX_REFINE; i++)
-	{
-		char* delim;
-
-		if (!(delim = strchr(fields[4+i], ':')))
-			return false;
-
-		*delim = '\0';
-
-		status->dbs->refine_info[current].chance[i] = atoi(fields[4+i]);
-
-		if (i >= random_bonus_start_level - 1)
-			status->dbs->refine_info[current].randombonus_max[i] = random_bonus * (i - random_bonus_start_level + 2);
-
-		status->dbs->refine_info[current].bonus[i] = bonus_per_level + atoi(delim+1);
-		if (i > 0)
-			status->dbs->refine_info[current].bonus[i] += status->dbs->refine_info[current].bonus[i-1];
+	config_setting_t *rate = NULL;
+	int type = REFINE_TYPE_ARMOR, bonus_per_level = 0, rnd_bonus_v = 0, rnd_bonus_lv = 0;
+	char lv[4];
+	nullpo_ret(r);
+	nullpo_ret(name);
+	nullpo_ret(source);
+	
+	if (strncmp(name, "Armors", 6) == 0) {
+		type = REFINE_TYPE_ARMOR;
+	} else if (strncmp(name, "WeaponLevel", 11) != 0 || !strspn(&name[strlen(name)-1], "0123456789") || (type = atoi(strncpy(lv, name+11, 2))) == REFINE_TYPE_ARMOR) {
+		ShowError("status_readdb_refine_libconfig_sub: Invalid key name for entry '%s' in \"%s\", skipping.\n", name, source);
+		return 0;
 	}
-	return true;
+	if (type < REFINE_TYPE_ARMOR || type >= REFINE_TYPE_MAX) {
+		ShowError("status_readdb_refine_libconfig_sub: Out of range level for entry '%s' in \"%s\", skipping.\n", name, source);
+		return 0;
+	}
+	if (!libconfig->setting_lookup_int(r, "StatsPerLevel", &bonus_per_level)) {
+		ShowWarning("status_readdb_refine_libconfig_sub: Missing StatsPerLevel for entry '%s' in \"%s\", skipping.\n", name, source);
+		return 0;
+	}
+	if (!libconfig->setting_lookup_int(r, "RandomBonusStartLevel", &rnd_bonus_lv)) {
+		ShowWarning("status_readdb_refine_libconfig_sub: Missing RandomBonusStartLevel for entry '%s' in \"%s\", skipping.\n", name, source);
+		return 0;
+	}
+	if (!libconfig->setting_lookup_int(r, "RandomBonusValue", &rnd_bonus_v)) {
+		ShowWarning("status_readdb_refine_libconfig_sub: Missing RandomBonusValue for entry '%s' in \"%s\", skipping.\n", name, source);
+		return 0;
+	}
+
+	if ((rate=libconfig->setting_get_member(r, "Rates")) != NULL && config_setting_is_group(rate)) {
+		config_setting_t *t = NULL;
+		bool duplicate[MAX_REFINE];
+		int bonus[MAX_REFINE], rnd_bonus[MAX_REFINE], chance[MAX_REFINE];
+		int i;
+		memset(&duplicate, 0, sizeof(duplicate));
+		memset(&bonus, 0, sizeof(bonus));
+		memset(&rnd_bonus, 0, sizeof(rnd_bonus));
+
+		for (i = 0; i < MAX_REFINE; i++) {
+			chance[i] = 100;
+		}
+		i = 0;
+		while ((t = libconfig->setting_get_elem(rate,i++)) != NULL && config_setting_is_group(t)) {
+			int level = 0, i32;
+			char *rlvl = config_setting_name(t);
+			memset(&lv, 0, sizeof(lv));
+			if (!strspn(&rlvl[strlen(rlvl)-1], "0123456789") || (level = atoi(strncpy(lv, rlvl+2, 3))) <= 0) {
+				ShowError("status_readdb_refine_libconfig_sub: Invalid refine level format '%s' for entry %s in \"%s\"... skipping.\n", rlvl, name, source);
+				continue;
+			}
+			if (level <= 0 || level > MAX_REFINE) {
+				ShowError("status_readdb_refine_libconfig_sub: Out of range refine level '%s' for entry %s in \"%s\"... skipping.\n", rlvl, name, source);
+				continue;
+			}
+			level--;
+			if (duplicate[level]) {
+				ShowWarning("status_readdb_refine_libconfig_sub: duplicate rate '%s' for entry %s in \"%s\", overwriting previous entry...\n", rlvl, name, source);
+			} else {
+				duplicate[level] = true;
+			}
+			if (libconfig->setting_lookup_int(t, "Chance", &i32))
+				chance[level] = i32;
+			else
+				chance[level] = 100;
+			if (libconfig->setting_lookup_int(t, "Bonus", &i32))
+				bonus[level] += i32;
+			if (level >= rnd_bonus_lv - 1)
+				rnd_bonus[level] = rnd_bonus_v * (level - rnd_bonus_lv + 2);
+		}
+		for (i = 0; i < MAX_REFINE; i++) {
+			status->dbs->refine_info[type].chance[i] = chance[i];
+			status->dbs->refine_info[type].randombonus_max[i] = rnd_bonus[i];
+			bonus[i] += bonus_per_level + (i > 0 ? bonus[i-1] : 0);
+			status->dbs->refine_info[type].bonus[i] = bonus[i];
+		}
+	} else {
+		ShowWarning("status_readdb_refine_libconfig_sub: Missing refine rates for entry '%s' in \"%s\", skipping.\n", name, source);
+		return 0;
+	}
+	return type+1;
+}
+
+/**
+ * Reads from a libconfig-formatted refine_db.conf file.
+ *
+ * @param *filename File name, relative to the database path.
+ * @return The number of found entries.
+ */
+int status_readdb_refine_libconfig(const char *filename) {
+	bool duplicate[REFINE_TYPE_MAX];
+	config_t refine_db_conf;
+	config_setting_t *r;
+	char filepath[256];
+	int i = 0, count = 0,type = 0;
+	
+	sprintf(filepath, "%s/%s", map->db_path, filename);
+	memset(&duplicate,0,sizeof(duplicate));
+	if( libconfig->read_file(&refine_db_conf, filepath) ) {
+		ShowError("can't read %s\n", filepath);
+		return 0;
+	}
+	
+	while((r = libconfig->setting_get_elem(refine_db_conf.root,i++))) {
+		char *name = config_setting_name(r);
+		if((type=status->readdb_refine_libconfig_sub(r, name, filename))) {
+			if( duplicate[type-1] ) {
+				ShowWarning("status_readdb_refine_libconfig: duplicate entry for %s in \"%s\", overwriting previous entry...\n", name, filename);
+			} else duplicate[type-1] = true;
+			count++;
+		}
+	}
+	libconfig->destroy(&refine_db_conf);
+	ShowStatus("Done reading '"CL_WHITE"%d"CL_RESET"' entries in '"CL_WHITE"%s"CL_RESET"'.\n", count, filename);
+	
+	return count;
 }
 
 bool status_readdb_scconfig(char* fields[], int columns, int current) {
@@ -12372,7 +12459,7 @@ int status_readdb(void)
 	//
 	sv->readdb(map->db_path, "job_db2.txt",         ',', 1,                 1+MAX_LEVEL,       -1,                       status->readdb_job2);
 	sv->readdb(map->db_path, DBPATH"size_fix.txt", ',', MAX_WEAPON_TYPE, MAX_WEAPON_TYPE, ARRAYLENGTH(status->dbs->atkmods), status->readdb_sizefix);
-	sv->readdb(map->db_path, DBPATH"refine_db.txt", ',', 4+MAX_REFINE,      4+MAX_REFINE,      ARRAYLENGTH(status->dbs->refine_info), status->readdb_refine);
+	status->readdb_refine_libconfig(DBPATH"refine_db.conf");
 	sv->readdb(map->db_path, "sc_config.txt",       ',', 2,                 2,                 SC_MAX,                   status->readdb_scconfig);
 	status->read_job_db();
 
@@ -12547,7 +12634,8 @@ void status_defaults(void) {
 	status->natural_heal_timer = status_natural_heal_timer;
 	status->readdb_job2 = status_readdb_job2;
 	status->readdb_sizefix = status_readdb_sizefix;
-	status->readdb_refine = status_readdb_refine;
+	status->readdb_refine_libconfig = status_readdb_refine_libconfig;
+	status->readdb_refine_libconfig_sub = status_readdb_refine_libconfig_sub;
 	status->readdb_scconfig = status_readdb_scconfig;
 	status->read_job_db = status_read_job_db;
 	status->read_job_db_sub = status_read_job_db_sub;

@@ -29,7 +29,7 @@
 #include "common/console.h"
 #include "common/core.h"
 #include "common/db.h"
-#include "common/malloc.h"
+#include "common/memmgr.h"
 #include "common/mapindex.h"
 #include "common/mmo.h"
 #include "common/nullpo.h"
@@ -140,7 +140,11 @@ struct fame_list chemist_fame_list[MAX_FAME_LIST];
 struct fame_list taekwon_fame_list[MAX_FAME_LIST];
 
 // Initial position (it's possible to set it in conf file)
-struct point start_point = { 0, 53, 111 };
+#ifdef RENEWAL
+	struct point start_point = { 0, 97, 90 };
+#else
+	struct point start_point = { 0, 53, 111 };
+#endif
 
 unsigned short skillid2idx[MAX_SKILL_ID];
 
@@ -2410,7 +2414,7 @@ void char_changesex(int account_id, int sex)
  * Performs the necessary operations when changing a character's sex, such as
  * correcting the job class and unequipping items, and propagating the
  * information to the guild data.
- * 
+ *
  * @param sex      The new sex (SEX_MALE or SEX_FEMALE).
  * @param acc      The character's account ID.
  * @param char_id  The character ID.
@@ -2479,7 +2483,7 @@ int char_parse_fromlogin_changesex_reply(int fd)
 	SQL->StmtBindColumn(stmt, 0, SQLDT_INT, &char_id,  0, NULL, NULL);
 	SQL->StmtBindColumn(stmt, 1, SQLDT_INT, &class_,   0, NULL, NULL);
 	SQL->StmtBindColumn(stmt, 2, SQLDT_INT, &guild_id, 0, NULL, NULL);
-	
+
 	for (i = 0; i < MAX_CHARS && SQL_SUCCESS == SQL->StmtNextRow(stmt); ++i) {
 		char_change_sex_sub(sex, acc, char_id, class_, guild_id);
 	}
@@ -2622,10 +2626,12 @@ int char_parse_fromlogin(int fd) {
 	while(RFIFOREST(fd) >= 2) {
 		uint16 command = RFIFOW(fd,0);
 
-		if( HPM->packetsc[hpParse_FromLogin] ) {
-			int success = HPM->parse_packets(fd,hpParse_FromLogin);
-			if( success == 1 ) continue;
-			else if( success == 2 ) return 0;
+		if (VECTOR_LENGTH(HPM->packets[hpParse_FromLogin]) > 0) {
+			int result = HPM->parse_packets(fd,hpParse_FromLogin);
+			if (result == 1)
+				continue;
+			if (result == 2)
+				return 0;
 		}
 
 		switch (command) {
@@ -2961,9 +2967,11 @@ void mapif_server_reset(int id)
 	WBUFL(buf,4) = htonl(chr->server[id].ip);
 	WBUFW(buf,8) = htons(chr->server[id].port);
 	j = 0;
-	for(i = 0; i < chr->server[id].maps; i++)
-		if (chr->server[id].map[i])
-			WBUFW(buf,10+(j++)*4) = chr->server[id].map[i];
+	for (i = 0; i < VECTOR_LENGTH(chr->server[id].maps); i++) {
+		uint16 m = VECTOR_INDEX(chr->server[id].maps, i);
+		if (m != 0)
+			WBUFW(buf,10+(j++)*4) = m;
+	}
 	if (j > 0) {
 		WBUFW(buf,2) = j * 4 + 10;
 		mapif->sendallwos(fd, buf, WBUFW(buf,2));
@@ -3046,14 +3054,16 @@ void char_send_maps(int fd, int id, int j)
 	// Transmitting the maps of the other map-servers to the new map-server
 	for(k = 0; k < ARRAYLENGTH(chr->server); k++) {
 		if (chr->server[k].fd > 0 && k != id) {
-			WFIFOHEAD(fd,10 +4*chr->server[k].maps);
+			WFIFOHEAD(fd,10 + 4 * VECTOR_LENGTH(chr->server[k].maps));
 			WFIFOW(fd,0) = 0x2b04;
 			WFIFOL(fd,4) = htonl(chr->server[k].ip);
 			WFIFOW(fd,8) = htons(chr->server[k].port);
 			j = 0;
-			for(i = 0; i < chr->server[k].maps; i++)
-				if (chr->server[k].map[i])
-					WFIFOW(fd,10+(j++)*4) = chr->server[k].map[i];
+			for(i = 0; i < VECTOR_LENGTH(chr->server[k].maps); i++) {
+				uint16 m = VECTOR_INDEX(chr->server[k].maps, i);
+				if (m != 0)
+					WFIFOW(fd,10+(j++)*4) = m;
+			}
 			if (j > 0) {
 				WFIFOW(fd,2) = j * 4 + 10;
 				WFIFOSET(fd,WFIFOW(fd,2));
@@ -3064,27 +3074,22 @@ void char_send_maps(int fd, int id, int j)
 
 void char_parse_frommap_map_names(int fd, int id)
 {
-	int i,j = 0;
+	int i;
 
-	if( chr->server[id].map != NULL ) { aFree(chr->server[id].map); chr->server[id].map = NULL; }
-
-	chr->server[id].maps = ( RFIFOW(fd, 2) - 4 ) / 4;
-	CREATE(chr->server[id].map, unsigned short, chr->server[id].maps);
-
-
-	for(i = 4; i < RFIFOW(fd,2); i += 4) {
-		chr->server[id].map[j] = RFIFOW(fd,i);
-		j++;
+	VECTOR_CLEAR(chr->server[id].maps);
+	VECTOR_ENSURE(chr->server[id].maps, (RFIFOW(fd, 2) - 4) / 4, 1);
+	for (i = 4; i < RFIFOW(fd,2); i += 4) {
+		VECTOR_PUSH(chr->server[id].maps, RFIFOW(fd,i));
 	}
 
 	ShowStatus("Map-Server %d connected: %d maps, from IP %d.%d.%d.%d port %d.\n",
-				id, j, CONVIP(chr->server[id].ip), chr->server[id].port);
+			id, (int)VECTOR_LENGTH(chr->server[id].maps), CONVIP(chr->server[id].ip), chr->server[id].port);
 	ShowStatus("Map-server %d loading complete.\n", id);
 
 	// send name for wisp to player
 	chr->map_received_ok(fd);
 	chr->send_fame_list(fd); //Send fame list.
-	chr->send_maps(fd, id, j);
+	chr->send_maps(fd, id, (int)VECTOR_LENGTH(chr->server[id].maps));
 	RFIFOSKIP(fd,RFIFOW(fd,2));
 }
 
@@ -3451,7 +3456,7 @@ void char_ask_name_ack(int fd, int acc, const char* name, int type, int result)
  * Changes a character's sex.
  * The information is updated on database, and the character is kicked if it
  * currently is online.
- * 
+ *
  * @param char_id The character's ID.
  * @param sex     The new sex.
  * @retval 0 in case of success.
@@ -3475,7 +3480,7 @@ int char_changecharsex(int char_id, int sex)
 	SQL->GetData(inter->sql_handle, 1, &data, NULL); class_ = atoi(data);
 	SQL->GetData(inter->sql_handle, 2, &data, NULL); guild_id = atoi(data);
 	SQL->FreeResult(inter->sql_handle);
-	
+
 	if (SQL_ERROR == SQL->Query(inter->sql_handle, "UPDATE `%s` SET `sex` = '%c' WHERE `char_id` = '%d'", char_db, sex == SEX_MALE ? 'M' : 'F', char_id)) {
 		Sql_ShowDebug(inter->sql_handle);
 		return 1;
@@ -3892,7 +3897,6 @@ void char_parse_frommap_scdata_delete(int fd)
 
 int char_parse_frommap(int fd)
 {
-	int i;
 	int id;
 
 	ARR_FIND( 0, ARRAYLENGTH(chr->server), id, chr->server[id].fd == fd );
@@ -3909,11 +3913,12 @@ int char_parse_frommap(int fd)
 	}
 
 	while(RFIFOREST(fd) >= 2) {
-		if( HPM->packetsc[hpParse_FromMap] ) {
-			if( (i = HPM->parse_packets(fd,hpParse_FromMap)) ) {
-				if( i == 1 ) continue;
-				if( i == 2 ) return 0;
-			}
+		if (VECTOR_LENGTH(HPM->packets[hpParse_FromMap]) > 0) {
+			int result = HPM->parse_packets(fd,hpParse_FromMap);
+			if (result == 1)
+				continue;
+			if (result == 2)
+				return 0;
 		}
 
 		switch(RFIFOW(fd,0)) {
@@ -4150,11 +4155,11 @@ int char_search_mapserver(unsigned short map, uint32 ip, uint16 port)
 	{
 		if (chr->server[i].fd > 0
 		&& (ip == (uint32)-1 || chr->server[i].ip == ip)
-		&& (port == (uint16)-1 || chr->server[i].port == port))
-		{
-			for (j = 0; chr->server[i].map[j]; j++)
-				if (chr->server[i].map[j] == map)
-					return i;
+		&& (port == (uint16)-1 || chr->server[i].port == port)
+		) {
+			ARR_FIND(0, VECTOR_LENGTH(chr->server[i].maps), j, VECTOR_INDEX(chr->server[i].maps, j) == map);
+			if (j != VECTOR_LENGTH(chr->server[i].maps))
+				return i;
 		}
 	}
 
@@ -4573,7 +4578,7 @@ void char_parse_char_select(int fd, struct char_session_data* sd, uint32 ipl)
 	}
 #endif
 
-	ARR_FIND( 0, ARRAYLENGTH(chr->server), server_id, chr->server[server_id].fd > 0 && chr->server[server_id].map );
+	ARR_FIND(0, ARRAYLENGTH(chr->server), server_id, chr->server[server_id].fd > 0 && VECTOR_LENGTH(chr->server[server_id].maps) > 0);
 	/* not available, tell it to wait (client wont close; char select will respawn).
 	 * magic response found by Ind thanks to Yommy <3 */
 	if( server_id == ARRAYLENGTH(chr->server) ) {
@@ -4634,7 +4639,7 @@ void char_parse_char_select(int fd, struct char_session_data* sd, uint32 ipl)
 	if (i < 0 || !cd->last_point.map) {
 		unsigned short j;
 		//First check that there's actually a map server online.
-		ARR_FIND( 0, ARRAYLENGTH(chr->server), j, chr->server[j].fd >= 0 && chr->server[j].map );
+		ARR_FIND(0, ARRAYLENGTH(chr->server), j, chr->server[j].fd >= 0 && VECTOR_LENGTH(chr->server[j].maps) > 0);
 		if (j == ARRAYLENGTH(chr->server)) {
 			ShowInfo("Connection Closed. No map servers available.\n");
 			chr->authfail_fd(fd, 1); // 1 = Server closed
@@ -5091,10 +5096,12 @@ int char_parse_char(int fd)
 		//For use in packets that depend on an sd being present [Skotlex]
 		#define FIFOSD_CHECK(rest) do { if(RFIFOREST(fd) < (rest)) return 0; if (sd==NULL || !sd->auth) { RFIFOSKIP(fd,(rest)); return 0; } } while (0)
 
-		if( HPM->packetsc[hpParse_Char] ) {
-			int success = HPM->parse_packets(fd,hpParse_Char);
-			if( success == 1 ) continue;
-			else if( success == 2 ) return 0;
+		if (VECTOR_LENGTH(HPM->packets[hpParse_Char]) > 0) {
+			int result = HPM->parse_packets(fd,hpParse_Char);
+			if (result == 1)
+				continue;
+			if (result == 2)
+				return 0;
 		}
 
 		cmd = RFIFOW(fd,0);
@@ -5639,17 +5646,33 @@ int char_config_read(const char* cfgName)
 				autosave_interval = DEFAULT_AUTOSAVE_INTERVAL;
 		} else if (strcmpi(w1, "save_log") == 0) {
 			save_log = config_switch(w2);
-		} else if (strcmpi(w1, "start_point") == 0) {
-			char map[MAP_NAME_LENGTH_EXT];
-			int x, y;
-			if (sscanf(w2, "%15[^,],%d,%d", map, &x, &y) < 3)
-				continue;
-			start_point.map = mapindex->name2id(map);
-			if (!start_point.map)
-				ShowError("Specified start_point %s not found in map-index cache.\n", map);
-			start_point.x = x;
-			start_point.y = y;
-		} else if (strcmpi(w1, "start_items") == 0) {
+		}
+		#ifdef RENEWAL
+			else if (strcmpi(w1, "start_point") == 0) {
+				char map[MAP_NAME_LENGTH_EXT];
+				int x, y;
+				if (sscanf(w2, "%15[^,],%d,%d", map, &x, &y) < 3)
+					continue;
+				start_point.map = mapindex->name2id(map);
+				if (!start_point.map)
+					ShowError("Specified start_point %s not found in map-index cache.\n", map);
+				start_point.x = x;
+				start_point.y = y;
+			}
+		#else
+			else if (strcmpi(w1, "start_point_pre") == 0) {
+				char map[MAP_NAME_LENGTH_EXT];
+				int x, y;
+				if (sscanf(w2, "%15[^,],%d,%d", map, &x, &y) < 3)
+					continue;
+				start_point.map = mapindex->name2id(map);
+				if (!start_point.map)
+					ShowError("Specified start_point_pre %s not found in map-index cache.\n", map);
+				start_point.x = x;
+				start_point.y = y;
+			}
+		#endif
+		else if (strcmpi(w1, "start_items") == 0) {
 			int i;
 			char *split;
 
@@ -5765,9 +5788,8 @@ int do_final(void) {
 	SQL->Free(inter->sql_handle);
 	mapindex->final();
 
-	for(i = 0; i < MAX_MAP_SERVERS; i++ )
-		if( chr->server[i].map )
-			aFree(chr->server[i].map);
+	for (i = 0; i < MAX_MAP_SERVERS; i++)
+		VECTOR_CLEAR(chr->server[i].maps);
 
 	aFree(chr->CHAR_CONF_NAME);
 	aFree(chr->NET_CONF_NAME);
@@ -5866,8 +5888,8 @@ int do_init(int argc, char **argv) {
 	chr->SQL_CONF_NAME = aStrdup("conf/inter-server.conf");
 	chr->INTER_CONF_NAME = aStrdup("conf/inter-server.conf");
 
-	for(i = 0; i < MAX_MAP_SERVERS; i++ )
-		chr->server[i].map = NULL;
+	for (i = 0; i < MAX_MAP_SERVERS; i++)
+		VECTOR_INIT(chr->server[i].maps);
 
 	HPM_char_do_init();
 	cmdline->exec(argc, argv, CMDLINE_OPT_PREINIT);
@@ -5876,7 +5898,12 @@ int do_init(int argc, char **argv) {
 
 	//Read map indexes
 	mapindex->init();
-	start_point.map = mapindex->name2id("new_zone01");
+
+	#ifdef RENEWAL
+		start_point.map = mapindex->name2id("iz_int");
+	#else
+		start_point.map = mapindex->name2id("new_1-1");
+	#endif
 
 	cmdline->exec(argc, argv, CMDLINE_OPT_NORMAL);
 	chr->config_read(chr->CHAR_CONF_NAME);

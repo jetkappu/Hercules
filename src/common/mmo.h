@@ -198,7 +198,7 @@
 #define JOBL_BABY 0x2000  //8192
 #define JOBL_THIRD 0x4000 //16384
 
-struct HPluginData;
+struct hplugin_data_store;
 
 enum item_types {
 	IT_HEALING = 0,
@@ -299,6 +299,7 @@ enum e_mmo_charstatus_opt {
 };
 
 enum e_item_bound_type {
+	IBT_NONE      = 0x0,
 	IBT_MIN       = 0x1,
 	IBT_ACCOUNT   = 0x1,
 	IBT_GUILD     = 0x2,
@@ -333,18 +334,15 @@ enum {
 	OPTION_DRAGON5      = 0x04000000,
 	OPTION_HANBOK       = 0x08000000,
 	OPTION_OKTOBERFEST  = 0x10000000,
-	
 #ifndef NEW_CARTS
 	OPTION_CART1     = 0x00000008,
 	OPTION_CART2     = 0x00000080,
 	OPTION_CART3     = 0x00000100,
 	OPTION_CART4     = 0x00000200,
 	OPTION_CART5     = 0x00000400,
-	
 	/*  compound constant for older carts */
 	OPTION_CART      = OPTION_CART1|OPTION_CART2|OPTION_CART3|OPTION_CART4|OPTION_CART5,
 #endif
-	
 	// compound constants
 	OPTION_DRAGON    = OPTION_DRAGON1|OPTION_DRAGON2|OPTION_DRAGON3|OPTION_DRAGON4|OPTION_DRAGON5,
 	OPTION_COSTUME   = OPTION_WEDDING|OPTION_XMAS|OPTION_SUMMER|OPTION_HANBOK|OPTION_OKTOBERFEST,
@@ -663,10 +661,7 @@ struct guild {
 	unsigned short instances;
 
 	struct channel_data *channel;
-
-	/* HPM Custom Struct */
-	struct HPluginData **hdata;
-	unsigned int hdatac;
+	struct hplugin_data_store *hdata; ///< HPM Plugin Data Store
 };
 
 struct guild_castle {
@@ -756,7 +751,6 @@ enum {
 	GD_DEVELOPMENT=10014,
 	GD_MAX,
 };
-
 
 //These mark the ID of the jobs, as expected by the client. [Skotlex]
 enum {

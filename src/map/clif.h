@@ -597,6 +597,7 @@ struct clif_interface {
 	int (*send_sub) (struct block_list *bl, va_list ap);
 	int (*send_actual) (int fd, void *buf, int len);
 	int (*parse) (int fd);
+	const struct s_packet_db *(*packet) (int packet_id);
 	unsigned short (*parse_cmd) ( int fd, struct map_session_data *sd );
 	unsigned short (*decrypt_cmd) ( int cmd, struct map_session_data *sd );
 	/* auth */
@@ -611,6 +612,8 @@ struct clif_interface {
 	void (*dropitem) (struct map_session_data *sd,int n,int amount);
 	void (*delitem) (struct map_session_data *sd,int n,int amount, short reason);
 	void (*takeitem) (struct block_list* src, struct block_list* dst);
+	void (*item_equip) (short idx, struct EQUIPITEM_INFO *p, struct item *i, struct item_data *id, int eqp_pos);
+	void (*item_normal) (short idx, struct NORMALITEM_INFO *p, struct item *i, struct item_data *id);
 	void (*arrowequip) (struct map_session_data *sd,int val);
 	void (*arrow_fail) (struct map_session_data *sd,int type);
 	void (*use_card) (struct map_session_data *sd,int idx);
@@ -1321,11 +1324,6 @@ struct clif_interface {
 };
 
 #ifdef HERCULES_CORE
-/**
- * Vars
- **/
-extern struct s_packet_db packet_db[MAX_PACKET_DB + 1];
-
 void clif_defaults(void);
 #endif // HERCULES_CORE
 

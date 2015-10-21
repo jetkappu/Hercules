@@ -6,7 +6,7 @@
 #include "common/hercules.h"
 #include "common/cbasetypes.h"
 #include "common/conf.h"
-#include "common/malloc.h"
+#include "common/memmgr.h"
 #include "common/mmo.h"
 #include "common/strlib.h"
 #include "common/timer.h"
@@ -139,10 +139,10 @@ int db2sql(config_setting_t *entry, int n, const char *source) {
 
 		// bindonequip
 		StrBuf->Printf(&buf, "'%u',", it->flag.bindonequip?1:0);
-		
+
 		// forceserial
 		StrBuf->Printf(&buf, "'%u',", it->flag.force_serial?1:0);
-		
+
 		// buyingstore
 		StrBuf->Printf(&buf, "'%u',", it->flag.buyingstore?1:0);
 

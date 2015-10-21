@@ -106,6 +106,7 @@ HPExport const struct s_HPMDataCheck HPMDataCheck[] = {
 	#endif // COMMON_CONF_H
 	#ifdef COMMON_CONSOLE_H
 		{ "CParseEntry", sizeof(struct CParseEntry), SERVER_TYPE_ALL },
+		{ "console_input_interface", sizeof(struct console_input_interface), SERVER_TYPE_ALL },
 		{ "console_interface", sizeof(struct console_interface), SERVER_TYPE_ALL },
 	#else
 		#define COMMON_CONSOLE_H
@@ -143,16 +144,16 @@ HPExport const struct s_HPMDataCheck HPMDataCheck[] = {
 	#else
 		#define COMMON_HPMI_H
 	#endif // COMMON_HPMI_H
-	#ifdef COMMON_MALLOC_H
-		{ "malloc_interface", sizeof(struct malloc_interface), SERVER_TYPE_ALL },
-	#else
-		#define COMMON_MALLOC_H
-	#endif // COMMON_MALLOC_H
 	#ifdef COMMON_MAPINDEX_H
 		{ "mapindex_interface", sizeof(struct mapindex_interface), SERVER_TYPE_CHAR|SERVER_TYPE_MAP },
 	#else
 		#define COMMON_MAPINDEX_H
 	#endif // COMMON_MAPINDEX_H
+	#ifdef COMMON_MEMMGR_H
+		{ "malloc_interface", sizeof(struct malloc_interface), SERVER_TYPE_ALL },
+	#else
+		#define COMMON_MEMMGR_H
+	#endif // COMMON_MEMMGR_H
 	#ifdef COMMON_MMO_H
 		{ "auction_data", sizeof(struct auction_data), SERVER_TYPE_ALL },
 		{ "fame_list", sizeof(struct fame_list), SERVER_TYPE_ALL },
@@ -200,6 +201,7 @@ HPExport const struct s_HPMDataCheck HPMDataCheck[] = {
 	#ifdef COMMON_SOCKET_H
 		{ "hSockOpt", sizeof(struct hSockOpt), SERVER_TYPE_ALL },
 		{ "s_subnet", sizeof(struct s_subnet), SERVER_TYPE_ALL },
+		{ "s_subnet_vector", sizeof(struct s_subnet_vector), SERVER_TYPE_ALL },
 		{ "socket_data", sizeof(struct socket_data), SERVER_TYPE_ALL },
 		{ "socket_interface", sizeof(struct socket_interface), SERVER_TYPE_ALL },
 	#else
